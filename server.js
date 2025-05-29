@@ -8,6 +8,7 @@ dotenv.config();
 const { body, validationResult } = require('express-validator');
 const fs = require('fs');
 const { URL } = require('url');
+const newroute = require('./bookings')
       
 
 const app = express();
@@ -17,6 +18,7 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
+app.use('/admin/bookings', newroute);
 
 // Database configuration
 const dbConfig = {
