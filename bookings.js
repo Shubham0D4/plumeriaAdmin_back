@@ -297,24 +297,30 @@ router.post('/check-availability', async (req, res) => {
 
     const [rows] = await pool.execute(`
       SELECT 
-        a.available_rooms,
-        COALESCE(SUM(br.rooms), 0) as booked_rooms
-      FROM accommodations a
-      LEFT JOIN booking_rooms br ON a.id = br.accommodation_id 
-        AND br.check_in_date < ? 
-        AND br.check_out_date > ?
-        AND EXISTS (
-          SELECT 1 FROM bookings b 
-          WHERE b.id = br.booking_id 
-          AND b.status NOT IN ('cancelled', 'completed')
-        )
-      WHERE a.id = ?
-      GROUP BY a.id, a.available_rooms
+  a.available_rooms,
+  COALESCE(SUM(br_count.booked_rooms), 0) AS booked_rooms
+FROM accommodations a
+LEFT JOIN (
+  SELECT 
+    br.accommodation_id,
+    COUNT(*) AS booked_rooms
+  FROM booking_rooms br
+  JOIN bookings b ON br.booking_id = b.id
+  WHERE 
+    b.status NOT IN ('cancelled', 'completed')
+    AND br.check_in_date < ?  -- Replace with check_out_date of the query range
+    AND br.check_out_date > ? -- Replace with check_in_date of the query range
+  GROUP BY br.accommodation_id
+) br_count ON a.id = br_count.accommodation_id
+WHERE a.id = ?
+GROUP BY a.id, a.available_rooms;
+
     `, [checkOut, checkIn, accommodationId]);
 
     if (rows.length === 0) {
       return res.status(404).json({ error: 'Accommodation not found' });
     }
+    
 
     const { available_rooms, booked_rooms } = rows[0];
     const availableRooms = available_rooms - booked_rooms;
