@@ -5,10 +5,10 @@ const mysql = require('mysql2/promise');
 
 // Database connection configuration
 const dbConfig = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || 'mysql.railway.internal',
   user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'plumeria_retreat',
+  password: process.env.DB_PASSWORD || 'XuzzPuWFCRujAWxdWZTSwVBFVKdnNnJT',
+  database: process.env.DB_NAME || 'railway',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
