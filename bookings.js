@@ -139,7 +139,7 @@ router.get('/bookings', async (req, res) => {
         b.check_out_date,
         b.adults,
         b.children,
-        b.rooms,
+        b.available_rooms,
         b.total_amount,
         b.status,
         b.payment_status,
