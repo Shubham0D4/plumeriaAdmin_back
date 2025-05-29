@@ -22,10 +22,10 @@ app.use('/admin/bookings', newroute);
 
 // Database configuration
 const dbConfig = {
-  host: process.env.DB_HOST || 'sql8.freesqldatabase.com',
-  user: process.env.DB_USER || 'sql8781743',
-  password: process.env.DB_PASSWORD || 'hHLX9AUZ7c',
-  database: process.env.DB_NAME || 'sql8781743',
+  host: process.env.DB_HOST || 'mysql.railway.internal',
+  user: process.env.DB_USER || 'root',
+  password: process.env.DB_PASSWORD || 'XuzzPuWFCRujAWxdWZTSwVBFVKdnNnJT',
+  database: process.env.DB_NAME || 'railway',
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
