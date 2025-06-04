@@ -9,6 +9,7 @@ const { body, validationResult } = require('express-validator');
 const fs = require('fs');
 const { URL } = require('url');
 const newroute = require('./bookings')
+const proute = require('./packages')
       
 
 const app = express();
@@ -19,6 +20,7 @@ app.use(cors());
 app.use(express.json());
 app.use('/uploads', express.static('uploads'));
 app.use('/admin/bookings', newroute);
+app.use('/admin/packages', proute);
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store');
   next();
