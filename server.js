@@ -12,7 +12,7 @@ const newroute = require('./bookings')
       
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT =  5001;
 
 // Middleware
 app.use(cors());
@@ -35,6 +35,13 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0
 };
+
+// const dbConfig = {
+//   host: 'localhost',
+//   user: 'root',
+//   password: '2005',
+//   database: 'plumeria_retreat',
+// };
 
 // Create database connection pool
 const pool = mysql.createPool(dbConfig);
@@ -1457,7 +1464,6 @@ app.get('/admin/health', (req, res) => {
   });
 });
 
-
 // Dashboard stats endpoint
 app.get('/admin/dashboard/stats', async (req, res) => {
   try {
@@ -2019,131 +2025,352 @@ app.get('/admin/activities', async (req, res) => {
 app.get('/admin/coupons', async (req, res) => {
   try {
     const [rows] = await pool.execute(`
-      SELECT * FROM coupons 
-      WHERE active = 1 AND (expiry_date IS NULL OR expiry_date >= CURDATE())
+      SELECT * FROM coupons
+      ORDER BY created_at DESC
     `);
-    res.json(rows);
+    // Transform data to match frontend expectations
+    const transformedCoupons = rows.map(coupon => ({
+      id: coupon.id,
+      name: `${coupon.discount_percentage}${coupon.discount_type === 'percentage' ? '%' : ' Rs'} OFF${coupon.min_amount ? ` (Min: ₹${coupon.min_amount})` : ''}`,
+      code: coupon.code,
+      discount: coupon.discount_percentage,
+      discountType: coupon.discount_type,
+      minAmount: coupon.min_amount,
+      maxDiscount: coupon.max_discount,
+      usageLimit: coupon.usage_limit,
+      usedCount: coupon.used_count,
+      active: coupon.active === 1,
+      expiryDate: coupon.expiry_date,
+      createdAt: coupon.created_at,
+      updatedAt: coupon.updated_at
+    }));
+
+    res.json({
+      success: true,
+      data: transformedCoupons
+    });
   } catch (error) {
     console.error('Error fetching coupons:', error);
-    res.status(500).json({ error: 'Failed to fetch coupons' });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch coupons',
+      error: error.message
+    });
   }
 });
 
-// Validate coupon
-app.post('/admin/coupons/validate', async (req, res) => {
+// GET /admin/coupons/:id - Get single coupon
+app.get('/admin/coupons/:id', async (req, res) => {
   try {
-    const { code, amount } = req.body;
-    
-    const [rows] = await pool.execute(`
-      SELECT * FROM coupons 
-      WHERE code = ? AND active = 1 
-      AND (expiry_date IS NULL OR expiry_date >= CURDATE())
-      AND (usage_limit IS NULL OR used_count < usage_limit)
-      AND min_amount <= ?
-    `, [code, amount]);
+    const { id } = req.params;
+    const [rows] = await pool.execute('SELECT * FROM coupons WHERE id = ?', [id]);
     
     if (rows.length === 0) {
-      return res.status(400).json({ error: 'Invalid or expired coupon' });
+      return res.status(404).json({
+        success: false,
+        message: 'Coupon not found'
+      });
     }
-    
+
     const coupon = rows[0];
-    let discount = 0;
-    
-    if (coupon.discount_type === 'percentage') {
-      discount = (amount * coupon.discount_percentage) / 100;
-      if (coupon.max_discount && discount > coupon.max_discount) {
-        discount = coupon.max_discount;
-      }
-    } else {
-      discount = coupon.discount_percentage; // Fixed amount
-    }
-    
+    const transformedCoupon = {
+      id: coupon.id,
+      name: `${coupon.discount_percentage}${coupon.discount_type === 'percentage' ? '%' : ' Rs'} OFF${coupon.min_amount ? ` (Min: ₹${coupon.min_amount})` : ''}`,
+      code: coupon.code,
+      discount: coupon.discount_percentage,
+      discountType: coupon.discount_type,
+      minAmount: coupon.min_amount,
+      maxDiscount: coupon.max_discount,
+      usageLimit: coupon.usage_limit,
+      usedCount: coupon.used_count,
+      active: coupon.active === 1,
+      expiryDate: coupon.expiry_date,
+      createdAt: coupon.created_at,
+      updatedAt: coupon.updated_at
+    };
+
     res.json({
-      valid: true,
-      discount: discount,
-      coupon: coupon
+      success: true,
+      data: transformedCoupon
+    });
+  } catch (error) {
+    console.error('Error fetching coupon:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch coupon',
+      error: error.message
+    });
+  }
+});
+
+// POST /admin/coupons - Create new coupon
+app.post('/admin/coupons', async (req, res) => {
+  try {
+    const {
+      code,
+      discountPercentage,
+      discountType = 'percentage',
+      minAmount = null,
+      maxDiscount = null,
+      usageLimit = null,
+      active = true,
+      expiryDate
+    } = req.body;
+
+    // Validation
+    if (!code || !discountPercentage || !expiryDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Code, discount percentage, and expiry date are required'
+      });
+    }
+
+    // Check if coupon code already exists
+    const [existingCoupons] = await pool.execute('SELECT id FROM coupons WHERE code = ?', [code]);
+    if (existingCoupons.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coupon code already exists'
+      });
+    }
+
+    const query = `
+      INSERT INTO coupons 
+      (code, discount_percentage, discount_type, min_amount, max_discount, usage_limit, used_count, active, expiry_date, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, NOW(), NOW())
+    `;
+
+    const [result] = await pool.execute(query, [
+      code.toUpperCase(),
+      discountPercentage,
+      discountType,
+      minAmount,
+      maxDiscount,
+      usageLimit,
+      active ? 1 : 0,
+      expiryDate
+    ]);
+
+    res.status(201).json({
+      success: true,
+      message: 'Coupon created successfully',
+      data: {
+        id: result.insertId,
+        code: code.toUpperCase(),
+        discountPercentage,
+        discountType,
+        minAmount,
+        maxDiscount,
+        usageLimit,
+        active,
+        expiryDate
+      }
+    });
+  } catch (error) {
+    console.error('Error creating coupon:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create coupon',
+      error: error.message
+    });
+  }
+});
+
+// PUT /admin/coupons/:id - Update coupon
+app.put('/admin/coupons/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      code,
+      discountPercentage,
+      discountType,
+      minAmount,
+      maxDiscount,
+      usageLimit,
+      active,
+      expiryDate
+    } = req.body;
+
+    // Check if coupon exists
+    const [existingCoupons] = await pool.execute('SELECT * FROM coupons WHERE id = ?', [id]);
+    if (existingCoupons.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Coupon not found'
+      });
+    }
+
+    // Check if new code conflicts with existing coupons (excluding current one)
+    if (code) {
+      const [conflictingCoupons] = await pool.execute('SELECT id FROM coupons WHERE code = ? AND id != ?', [code, id]);
+      if (conflictingCoupons.length > 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'Coupon code already exists'
+        });
+      }
+    }
+
+    const query = `
+      UPDATE coupons 
+      SET code = ?, discount_percentage = ?, discount_type = ?, min_amount = ?, 
+          max_discount = ?, usage_limit = ?, active = ?, expiry_date = ?, updated_at = NOW()
+      WHERE id = ?
+    `;
+
+    await pool.execute(query, [
+      code ? code.toUpperCase() : existingCoupons[0].code,
+      discountPercentage ?? existingCoupons[0].discount_percentage,
+      discountType ?? existingCoupons[0].discount_type,
+      minAmount ?? existingCoupons[0].min_amount,
+      maxDiscount ?? existingCoupons[0].max_discount,
+      usageLimit ?? existingCoupons[0].usage_limit,
+      active !== undefined ? (active ? 1 : 0) : existingCoupons[0].active,
+      expiryDate ?? existingCoupons[0].expiry_date,
+      id
+    ]);
+
+    res.json({
+      success: true,
+      message: 'Coupon updated successfully'
+    });
+  } catch (error) {
+    console.error('Error updating coupon:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update coupon',
+      error: error.message
+    });
+  }
+});
+
+// PATCH /admin/coupons/:id/toggle - Toggle coupon active status
+app.patch('/admin/coupons/:id/toggle', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if coupon exists and get current status
+    const [existingCoupons] = await pool.execute('SELECT active FROM coupons WHERE id = ?', [id]);
+    if (existingCoupons.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Coupon not found'
+      });
+    }
+
+    const newStatus = existingCoupons[0].active === 1 ? 0 : 1;
+    
+    await pool.execute('UPDATE coupons SET active = ?, updated_at = NOW() WHERE id = ?', [newStatus, id]);
+
+    res.json({
+      success: true,
+      message: `Coupon ${newStatus ? 'activated' : 'deactivated'} successfully`,
+      data: { active: newStatus === 1 }
+    });
+  } catch (error) {
+    console.error('Error toggling coupon status:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to toggle coupon status',
+      error: error.message
+    });
+  }
+});
+
+// DELETE /admin/coupons/:id - Delete coupon
+app.delete('/admin/coupons/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Check if coupon exists
+    const [existingCoupons] = await pool.execute('SELECT * FROM coupons WHERE id = ?', [id]);
+    if (existingCoupons.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Coupon not found'
+      });
+    }
+
+    // Check if coupon has been used
+    if (existingCoupons[0].used_count > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot delete coupon that has been used'
+      });
+    }
+
+    await pool.execute('DELETE FROM coupons WHERE id = ?', [id]);
+
+    res.json({
+      success: true,
+      message: 'Coupon deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting coupon:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete coupon',
+      error: error.message
+    });
+  }
+});
+
+// GET /admin/coupons/validate/:code - Validate coupon code
+app.get('/admin/coupons/validate/:code', async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { amount } = req.query; // Optional order amount for validation
+
+    const [rows] = await pool.execute(`
+      SELECT * FROM coupons 
+      WHERE code = ? AND active = 1 AND expiry_date >= CURDATE()
+    `, [code.toUpperCase()]);
+
+    if (rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid or expired coupon code'
+      });
+    }
+
+   
+
+    const coupon = rows[0];
+
+    // Check usage limit
+    if (coupon.usage_limit && coupon.used_count >= coupon.usage_limit) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coupon usage limit exceeded'
+      });
+    }
+
+    // Check minimum amount
+    if (amount && coupon.min_amount && parseFloat(amount) < coupon.min_amount) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum order amount of ₹${coupon.min_amount} required`
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Coupon is valid',
+      data: {
+        id: coupon.id,
+        code: coupon.code,
+        discountPercentage: coupon.discount_percentage,
+        discountType: coupon.discount_type,
+        maxDiscount: coupon.max_discount
+      }
     });
   } catch (error) {
     console.error('Error validating coupon:', error);
-    res.status(500).json({ error: 'Failed to validate coupon' });
-  }
-});
-
-// Get blocked dates
-app.get('/admin/blocked-dates', async (req, res) => {
-  try {
-    const [rows] = await pool.execute('SELECT blocked_date FROM blocked_dates');
-    const dates = rows.map(row => row.blocked_date);
-    res.json(dates);
-  } catch (error) {
-    console.error('Error fetching blocked dates:', error);
-    res.status(500).json({ error: 'Failed to fetch blocked dates' });
-  }
-});
-
-// Export bookings to CSV
-app.get('/admin/bookings/export/csv', async (req, res) => {
-  try {
-    const query = `
-      SELECT 
-        CONCAT('B', LPAD(b.id, 5, '0')) as booking_id,
-        b.guest_name,
-        b.guest_email,
-        b.guest_phone,
-        a.title as accommodation,
-        b.check_in_date,
-        b.check_out_date,
-        b.adults,
-        b.children,
-        b.total_amount,
-        COALESCE(SUM(p.amount), 0) as paid_amount,
-        b.status,
-        b.payment_status,
-        b.created_at
-      FROM bookings b
-      LEFT JOIN accommodations a ON b.accommodation_id = a.id
-      LEFT JOIN payments p ON b.id = p.booking_id AND p.status = 'success'
-      GROUP BY b.id
-      ORDER BY b.created_at DESC
-    `;
-    
-    const [rows] = await pool.execute(query);
-    
-    // Convert to CSV
-    const headers = [
-      'Booking ID', 'Guest Name', 'Email', 'Phone', 'Accommodation',
-      'Check In', 'Check Out', 'Adults', 'Children', 'Total Amount',
-      'Paid Amount', 'Status', 'Payment Status', 'Created At'
-    ];
-    
-    let csv = headers.join(',') + '\n';
-    
-    rows.forEach(row => {
-      const values = [
-        row.booking_id,
-        `"${row.guest_name}"`,
-        row.guest_email,
-        row.guest_phone || '',
-        `"${row.accommodation || ''}"`,
-        row.check_in_date,
-        row.check_out_date,
-        row.adults,
-        row.children || 0,
-        row.total_amount,
-        row.paid_amount,
-        row.status,
-        row.payment_status,
-        row.created_at
-      ];
-      csv += values.join(',') + '\n';
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate coupon',
+      error: error.message
     });
-    
-    res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename=bookings.csv');
-    res.send(csv);
-  } catch (error) {
-    console.error('Error exporting bookings:', error);
-    res.status(500).json({ error: 'Failed to export bookings' });
   }
 });
 

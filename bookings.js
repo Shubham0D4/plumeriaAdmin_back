@@ -13,6 +13,12 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0
 };
+// const dbConfig = {
+//   host: 'localhost',
+//   user: 'root',
+//   password: '2005',
+//   database: 'plumeria_retreat',
+// };
 
 const pool = mysql.createPool(dbConfig);
 
