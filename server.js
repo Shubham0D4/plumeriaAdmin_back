@@ -12,7 +12,7 @@ const newroute = require('./bookings')
       
 
 const app = express();
-const PORT =  5001;
+const PORT = process.env.PORT|| 8080;
 
 // Middleware
 app.use(cors());
