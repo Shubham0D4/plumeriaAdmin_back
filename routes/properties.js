@@ -84,32 +84,33 @@ routes.get('/accommodations', async (req, res) => {
         const [rows] = await connection.execute(query, params);
         
         // Process the data to match frontend expectations
-        const processedRows = rows.map(row => {
-            // Safe JSON parsing helper
-            const safeParse = (jsonString, defaultValue) => {
-                try {
-                    return JSON.parse(jsonString);
-                } catch (e) {
-                    console.error('JSON parse error:', e, 'Data:', jsonString);
-                    return defaultValue;
-                }
-            };
+        const safeParse = (jsonString, defaultValue, label = 'unknown') => {
+    try {
+        return JSON.parse(jsonString);
+    } catch (e) {
+        console.error(`❌ JSON parse error in [${label}]:`, e.message);
+        console.error("🧪 Data was:", jsonString);
+        return defaultValue;
+    }
+};
 
-            const featuresParsed = row.features ? safeParse(row.features, []) : [];
-            const imageParsed = row.image ? safeParse(row.image, null) : null;
-            const detailedInfoParsed = row.detailed_info ? safeParse(row.detailed_info, null) : null;
+const processedRows = rows.map(row => {
+    const featuresParsed = row.features ? safeParse(row.features, [], 'features') : [];
+    const imageParsed = row.image ? safeParse(row.image, null, 'image') : null;
+    const detailedInfoParsed = row.detailed_info ? safeParse(row.detailed_info, null, 'detailed_info') : null;
 
-            return {
-                ...row,
-                available: row.available === 1,
-                has_ac: row.has_ac === 1,
-                has_attached_bath: row.has_attached_bath === 1,
-                features: featuresParsed,
-                image_url: imageParsed ? (Array.isArray(imageParsed) ? imageParsed[0] : imageParsed) : null,
-                detailed_info: detailedInfoParsed,
-                amenities: featuresParsed
-            };
-        });
+    return {
+        ...row,
+        available: row.available === 1,
+        has_ac: row.has_ac === 1,
+        has_attached_bath: row.has_attached_bath === 1,
+        features: featuresParsed,
+        image_url: imageParsed ? (Array.isArray(imageParsed) ? imageParsed[0] : imageParsed) : null,
+        detailed_info: detailedInfoParsed,
+        amenities: featuresParsed
+    };
+});
+
         
         await closeConnection(connection);
         res.json(processedRows);
